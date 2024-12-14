@@ -1,3 +1,4 @@
+import re
 import yaml
 import json
 import asyncio
@@ -86,27 +87,16 @@ def load_config():
     with open("config.yaml", "r", encoding="utf-8") as file:
         return Namespace(**yaml.load(file, Loader=yaml.SafeLoader))
 
-
 class TelegramSearch(BaseThon):
-    def __init__(self, item: str, json_data: dict):
+    def __init__(self, item: str, json_data: dict, config: Namespace):
         if not item:
             raise ValueError("Переданный параметр 'item' пустой или None.")
         if not isinstance(json_data, dict):
             raise ValueError("Переданный параметр 'json_data' должен быть словарем.")
         super().__init__(item, json_data)
 
-        self.settings = self._load_settings()
         self.output_file = Path("result.yaml")
-
-    @staticmethod
-    def _load_settings() -> dict:
-        try:
-            with open("settings.json", "r", encoding="utf-8") as f:
-                return json.load(f)
-        except FileNotFoundError:
-            raise FileNotFoundError("Файл settings.json не найден!")
-        except json.JSONDecodeError:
-            raise ValueError("Ошибка чтения settings.json! Убедитесь, что файл содержит корректный JSON.")
+        self.config = config
 
     def create_channel(self, username, *args, **kwargs):
         console.log(f"Channel: {username}. FOUND!", style="green")
@@ -120,10 +110,20 @@ class TelegramSearch(BaseThon):
         with open("result.yaml", "w") as file:
             yaml.dump(dict_channels, file)
 
+    def detect_language(self, text: str) -> str:
+        try:
+            if re.search(r'[а-яА-Я]', text):
+                return 'sng'
+            elif re.search(r'[a-zA-Z]', text):
+                return 'other'
+        except Exception:
+            pass
+        return 'unknown'
+
     async def main(self, config):
         r = await self.check()
         if "OK" not in r:
-            console.log("Аккаунт забанен", style="red")
+            console.log("Аккаунт разлогинен или забанен", style="red")
             return
         await self.start_search(config)
 
@@ -175,6 +175,20 @@ class TelegramSearch(BaseThon):
                 )
                 continue
 
+            last_post_text = None
+            async for message in self.client.iter_messages(peer.channel_id, limit=2):
+                if message.text:
+                    last_post_text = message.text
+
+            if last_post_text:
+                detected_language = self.detect_language(last_post_text)
+                language_filter = self.config.language_filter
+
+                if language_filter == "sng" and detected_language != "sng":
+                    continue
+                elif language_filter == "other" and detected_language != "other":
+                    continue
+                
             if not is_comments:
                 if entity.username is None:
                     continue
@@ -204,8 +218,10 @@ class TelegramSearch(BaseThon):
 
 async def main():
     config = load_config()
+    session_file = f'{config.session}.session'
+    json_file = f'{config.session}.json'
 
-    basethon_session = Path('session.session')
+    basethon_session = Path(session_file)
     if not basethon_session.exists():
         console.log(f"Файл {config.session}.session не найден.", style='yellow')
         return
@@ -213,17 +229,17 @@ async def main():
     if not sessions_count:
         console.log("Нет аккаунтов в папке с сессиями!", style="yellow")
     try:
-        with open("session.json", "r", encoding="utf-8") as f:
+        with open(json_file, "r", encoding="utf-8") as f:
             json_data = json.load(f)
     except FileNotFoundError:
-        console.log("Файл session.json не найден!", style="red")
+        console.log(f"Файл {json_file} не найден!", style="red")
         json_data = {}
     except json.JSONDecodeError:
-        console.log("Ошибка чтения session.json! Убедитесь, что файл содержит корректный JSON.", style="red")
+        console.log(f"Ошибка чтения {json_file}! Убедитесь, что файл содержит корректный JSON.", style="red")
         json_data = {}
 
     try:
-        telegram_search = TelegramSearch('session', json_data)
+        telegram_search = TelegramSearch(session_file, json_data, config)
         await telegram_search.main(config)
     except Exception as e:
         console.log(f"Ошибка запуска: {e}", style="red")

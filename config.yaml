@@ -1,7 +1,8 @@
-session: 'session'
+session: 'my'
 
 min_participants_count: 5000 #от какого кол-ва подписчиков сохранять канналы
 
+language_filter: other  # Опции: all, sng, other
 
 names: #тут список ключевых слов
   - мото
