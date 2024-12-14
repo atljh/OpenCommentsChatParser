@@ -1,0 +1,6 @@
+venv
+.venv
+*.txt
+result.yaml
+*.session
+*.json
