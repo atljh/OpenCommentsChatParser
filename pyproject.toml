@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "opencommentschatparser"
+version = "0.1.0"
+description = ""
+authors = ["atljh <fiodorlukashov@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+python-dotenv = "^1.0.1"
+rich = "^13.8.0"
+rich-menu = "^0.2.0"
+httpx = "^0.27.2"
+telethon = "^1.36.0"
+tooler = {git = "https://github.com/atljh/tools.git"}
+jsoner = {git = "https://github.com/atljh/jsoner.git"}
+python-socks = "2.1.1"
+async-timeout = "^4.0.3"
+requests = "^2.32.3"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
