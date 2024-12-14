@@ -4,3 +4,4 @@ venv
 result.yaml
 *.session
 *.json
+poetry.lock
