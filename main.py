@@ -4,7 +4,8 @@ import asyncio
 import requests
 import subprocess
 
-from console import console
+from typing import List
+from pathlib import Path
 from argparse import Namespace
 from dataclasses import dataclass, asdict
 
@@ -13,6 +14,10 @@ from telethon import TelegramClient
 from telethon.tl.types import PeerChannel
 from telethon.tl.functions.channels import GetFullChannelRequest
 
+from console import console
+from basethon.base_thon import BaseThon
+from basethon.base_session import BaseSession
+from basethon.json_converter import JsonConverter
 
 def get_settings():
     try:
@@ -72,107 +77,158 @@ def register_user():
 # register_user()
 
 
-def load_config():
-    with open("config.yaml", "r", encoding="utf-8") as file:
-        return Namespace(**yaml.load(file, Loader=yaml.SafeLoader))
-
-
 @dataclass
 class Channel:
     username: str
     members: int
 
-
-def create_channel(username, *args, **kwargs):
-    console.log(f"Channel: {username}. FOUND!", style="green")
-    return Channel(username, *args, **kwargs)
-
-
-async def search_channels_globally(
-    client: TelegramClient,
-    search: str,
-    min_participants_count: int = 0,
-    is_comments: bool = True,
-):
-    result = await client(functions.contacts.SearchRequest(q=search, limit=100))
-
-    channels = []
-
-    for peer in result.results:
-        if type(peer) != PeerChannel:
-            continue
-
-        entity = await client.get_entity(peer.channel_id)
-
-        if entity.megagroup is True:
-            continue
-
-        channel_full_info = await client(GetFullChannelRequest(peer.channel_id))
-
-        if min_participants_count > channel_full_info.full_chat.participants_count:
-            console.log(
-                f"Channel: {entity.username!r}. "
-                f"Participants count: "
-                f"{channel_full_info.full_chat.participants_count}"
-                f" < {min_participants_count}"
-            )
-            continue
-
-        if not is_comments:
-            if entity.username is None:
-                continue
-            channels.append(
-                create_channel(
-                    entity.username, channel_full_info.full_chat.participants_count
-                )
-            )
-            continue
-
-        async for message in client.iter_messages(peer.channel_id, limit=10):
-            if message.replies:
-                if entity.username is None:
-                    break
-                channels.append(
-                    create_channel(
-                        entity.username, channel_full_info.full_chat.participants_count
-                    )
-                )
-                break
-        else:
-            if entity.username is None:
-                continue
-            console.log(f"Channel: {entity.username!r}. " f"Comments are closed.")
-    return channels
+def load_config():
+    with open("config.yaml", "r", encoding="utf-8") as file:
+        return Namespace(**yaml.load(file, Loader=yaml.SafeLoader))
 
 
-def dump_to_yaml(channels):
-    dict_channels = [asdict(channel) for channel in channels]
-    dict_channels = sorted(
-        dict_channels, key=lambda channel: channel["members"], reverse=True
-    )
-    with open("result.yaml", "w") as file:
-        yaml.dump(dict_channels, file)
+class TelegramSearch(BaseThon):
+    def __init__(self, item: str, json_data: dict):
+        if not item:
+            raise ValueError("Переданный параметр 'item' пустой или None.")
+        if not isinstance(json_data, dict):
+            raise ValueError("Переданный параметр 'json_data' должен быть словарем.")
+        super().__init__(item, json_data)
 
+        self.settings = self._load_settings()
+        self.output_file = Path("result.yaml")
 
-async def main():
-    config = load_config()
+    @staticmethod
+    def _load_settings() -> dict:
+        try:
+            with open("settings.json", "r", encoding="utf-8") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            raise FileNotFoundError("Файл settings.json не найден!")
+        except json.JSONDecodeError:
+            raise ValueError("Ошибка чтения settings.json! Убедитесь, что файл содержит корректный JSON.")
 
-    async with TelegramClient(
-        config.session, api_id=config.api_id, api_hash=config.api_hash
-    ) as client:
+    def create_channel(self, username, *args, **kwargs):
+        console.log(f"Channel: {username}. FOUND!", style="green")
+        return Channel(username, *args, **kwargs)
+
+    def dump_to_yaml(self, channels):
+        dict_channels = [asdict(channel) for channel in channels]
+        dict_channels = sorted(
+            dict_channels, key=lambda channel: channel["members"], reverse=True
+        )
+        with open("result.yaml", "w") as file:
+            yaml.dump(dict_channels, file)
+
+    async def main(self, config):
+        r = await self.check()
+        if "OK" not in r:
+            console.log("Аккаунт забанен", style="red")
+            return
+        await self.start_search(config)
+
+    async def start_search(self, config):
         channels = []
         for name in config.names:
             for ending in config.endings:
                 search = f"{name}{ending}"
                 console.log(f"Search by {search!r}.")
-                found_channels = await search_channels_globally(
-                    client,
+                found_channels = await self.search_channels_globally(
                     search,
                     min_participants_count=config.min_participants_count,
                     is_comments=True,
                 )
                 channels.extend(found_channels)
-        dump_to_yaml(channels)
+        self.dump_to_yaml(channels)
+
+    async def search_channels_globally(
+        self,
+        search: str,
+        min_participants_count: int = 0,
+        is_comments: bool = True,
+    ) -> List[Channel]:
+        
+        try:
+            result = await self.client(functions.contacts.SearchRequest(q=search, limit=100))
+        except Exception as e:
+            console.log(f"Ошибка поиска по запросу {search!r}: {e}", style="red")
+            return []
+        channels = []
+
+        for peer in result.results:
+            if type(peer) != PeerChannel:
+                continue
+
+            entity = await self.client.get_entity(peer.channel_id)
+
+            if entity.megagroup is True:
+                continue
+
+            channel_full_info = await self.client(GetFullChannelRequest(peer.channel_id))
+
+            if min_participants_count > channel_full_info.full_chat.participants_count:
+                console.log(
+                    f"Channel: {entity.username!r}. "
+                    f"Participants count: "
+                    f"{channel_full_info.full_chat.participants_count}"
+                    f" < {min_participants_count}"
+                )
+                continue
+
+            if not is_comments:
+                if entity.username is None:
+                    continue
+                channels.append(
+                    self.create_channel(
+                        entity.username, channel_full_info.full_chat.participants_count
+                    )
+                )
+                continue
+
+            async for message in self.client.iter_messages(peer.channel_id, limit=10):
+                if message.replies:
+                    if entity.username is None:
+                        break
+                    channels.append(
+                        self.create_channel(
+                            entity.username, channel_full_info.full_chat.participants_count
+                        )
+                    )
+                    break
+            else:
+                if entity.username is None:
+                    continue
+                console.log(f"Channel: {entity.username!r}. " f"Comments are closed.")
+        return channels
+
+
+async def main():
+    config = load_config()
+
+    basethon_session = Path('session.session')
+    if not basethon_session.exists():
+        console.log(f"Файл {config.session}.session не найден.", style='yellow')
+        return
+    sessions_count = JsonConverter().main()
+    if not sessions_count:
+        console.log("Нет аккаунтов в папке с сессиями!", style="yellow")
+    try:
+        with open("session.json", "r", encoding="utf-8") as f:
+            json_data = json.load(f)
+    except FileNotFoundError:
+        console.log("Файл session.json не найден!", style="red")
+        json_data = {}
+    except json.JSONDecodeError:
+        console.log("Ошибка чтения session.json! Убедитесь, что файл содержит корректный JSON.", style="red")
+        json_data = {}
+
+    try:
+        telegram_search = TelegramSearch('session', json_data)
+        await telegram_search.main(config)
+    except Exception as e:
+        console.log(f"Ошибка запуска: {e}", style="red")
+
+
 
 
 if __name__ == "__main__":

@@ -1,4 +1,3 @@
-__pycache__
 venv
 .venv
 *.txt
@@ -6,3 +5,4 @@ result.yaml
 *.session
 *.json
 poetry.lock
+__pycache__
