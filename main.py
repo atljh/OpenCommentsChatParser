@@ -4,7 +4,7 @@ import asyncio
 import requests
 import subprocess
 
-from loguru import logger
+from console import console
 from argparse import Namespace
 from dataclasses import dataclass, asdict
 
@@ -84,7 +84,7 @@ class Channel:
 
 
 def create_channel(username, *args, **kwargs):
-    logger.info(f"Channel: {username}. FOUND!")
+    console.log(f"Channel: {username}. FOUND!", style="green")
     return Channel(username, *args, **kwargs)
 
 
@@ -110,7 +110,7 @@ async def search_channels_globally(
         channel_full_info = await client(GetFullChannelRequest(peer.channel_id))
 
         if min_participants_count > channel_full_info.full_chat.participants_count:
-            logger.error(
+            console.log(
                 f"Channel: {entity.username!r}. "
                 f"Participants count: "
                 f"{channel_full_info.full_chat.participants_count}"
@@ -119,6 +119,8 @@ async def search_channels_globally(
             continue
 
         if not is_comments:
+            if entity.username is None:
+                continue
             channels.append(
                 create_channel(
                     entity.username, channel_full_info.full_chat.participants_count
@@ -128,6 +130,8 @@ async def search_channels_globally(
 
         async for message in client.iter_messages(peer.channel_id, limit=10):
             if message.replies:
+                if entity.username is None:
+                    break
                 channels.append(
                     create_channel(
                         entity.username, channel_full_info.full_chat.participants_count
@@ -135,7 +139,9 @@ async def search_channels_globally(
                 )
                 break
         else:
-            logger.error(f"Channel: {entity.username!r}. " f"Comments are closed.")
+            if entity.username is None:
+                continue
+            console.log(f"Channel: {entity.username!r}. " f"Comments are closed.")
     return channels
 
 
@@ -158,7 +164,7 @@ async def main():
         for name in config.names:
             for ending in config.endings:
                 search = f"{name}{ending}"
-                logger.info(f"Search by {search!r}.")
+                console.log(f"Search by {search!r}.")
                 found_channels = await search_channels_globally(
                     client,
                     search,

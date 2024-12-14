@@ -1,4 +1,6 @@
-session: 'session'
+api_id: 1775488
+api_hash: '693652e92b0022cb1eedbb6238fd9d36'
+session: 'my'
 
 min_participants_count: 5000 #от какого кол-ва подписчиков сохранять канналы
 
