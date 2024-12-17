@@ -11,13 +11,11 @@ from argparse import Namespace
 from dataclasses import dataclass, asdict
 
 from telethon.tl import functions
-from telethon import TelegramClient
 from telethon.tl.types import PeerChannel
 from telethon.tl.functions.channels import GetFullChannelRequest
 
 from console import console
 from basethon.base_thon import BaseThon
-from basethon.base_session import BaseSession
 from basethon.json_converter import JsonConverter
 
 def get_settings():
@@ -107,7 +105,7 @@ class TelegramSearch(BaseThon):
         dict_channels = sorted(
             dict_channels, key=lambda channel: channel["members"], reverse=True
         )
-        with open("result.yaml", "w") as file:
+        with open(self.output_file, "w") as file:
             yaml.dump(dict_channels, file)
 
     def detect_language(self, text: str) -> str:
